@@ -1,32 +1,73 @@
-use serde::Deserialize;
+use crate::models::Repo;
+use reqwest::blocking::Client;
+use serde_json::json;
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct Repo {
-    pub name: String,
-    pub html_url: String,
+pub struct GitHubClient {
+    token: String,
+    client: Client,
 }
 
-pub struct GitHubClient;
-
 impl GitHubClient {
-    pub fn fetch_repos(user: &str) -> Vec<Repo> {
-        let url = format!("https://api.github.com/users/{}/repos", user);
-        let client = reqwest::blocking::Client::new();
+    pub fn new(token: String) -> Self {
+        Self {
+            token,
+            client: Client::new(),
+        }
+    }
 
-        let res = client
-            .get(&url)
-            .header("User-Agent", "rust-github-client")
-            .send();
+    pub fn list_repos(&self) -> Result<Vec<Repo>, String> {
+        let res = self
+            .client
+            .get("https://api.github.com/user/repos")
+            .header("User-Agent", "rust-gui")
+            .bearer_auth(&self.token)
+            .send()
+            .map_err(|e| e.to_string())?;
 
-        match res {
-            Ok(resp) => {
-                if let Ok(repos) = resp.json::<Vec<Repo>>() {
-                    repos
-                } else {
-                    vec![]
-                }
-            }
-            Err(_) => vec![],
+        if res.status().is_success() {
+            res.json::<Vec<Repo>>().map_err(|e| e.to_string())
+        } else {
+            Err(format!("Ошибка: {}", res.status()))
+        }
+    }
+
+    pub fn create_repo(&self, name: &str) -> Result<(), String> {
+        let body = json!({
+            "name": name,
+            "private": false
+        });
+
+        let res = self
+            .client
+            .post("https://api.github.com/user/repos")
+            .header("User-Agent", "rust-gui")
+            .bearer_auth(&self.token)
+            .json(&body)
+            .send()
+            .map_err(|e| e.to_string())?;
+
+        if res.status().is_success() {
+            Ok(())
+        } else {
+            Err(format!("Ошибка: {}", res.status()))
+        }
+    }
+
+    pub fn delete_repo(&self, owner: &str, repo: &str) -> Result<(), String> {
+        let url = format!("https://api.github.com/repos/{}/{}", owner, repo);
+
+        let res = self
+            .client
+            .delete(&url)
+            .header("User-Agent", "rust-gui")
+            .bearer_auth(&self.token)
+            .send()
+            .map_err(|e| e.to_string())?;
+
+        if res.status().is_success() {
+            Ok(())
+        } else {
+            Err(format!("Ошибка: {}", res.status()))
         }
     }
 }
