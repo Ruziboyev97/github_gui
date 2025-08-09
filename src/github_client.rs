@@ -1,7 +1,11 @@
-use anyhow::{Result};
+use anyhow::Result;
 use reqwest::blocking::Client;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
+#[derive(Deserialize)]
+struct User {
+    login: String,
+}
 pub struct GitHubClient {
     token: String,
     client: Client,
@@ -13,6 +17,20 @@ impl GitHubClient {
             token,
             client: Client::new(),
         }
+    }
+
+    pub fn get_owner(&self) -> Result<String> {
+        let url = "https://api.github.com/user";
+        let user: User = self
+            .client
+            .get(url)
+            .header("User-Agent", "rust-github-client")
+            .bearer_auth(&self.token)
+            .send()?
+            .error_for_status()?
+            .json()?;
+
+        Ok(user.login)
     }
 
     pub fn list_repos(&self) -> Result<Vec<String>> {

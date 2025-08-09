@@ -10,4 +10,3 @@ fn main() -> eframe::Result<()> {
         Box::new(|_cc| Box::new(gui::MyApp::default())),
     )
 }
-

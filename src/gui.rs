@@ -1,9 +1,10 @@
 use crate::github_client::GitHubClient;
-use eframe::egui::{CentralPanel, Context, TextEdit};
 use copypasta::{ClipboardContext, ClipboardProvider};
+use eframe::egui::{CentralPanel, Context, TextEdit};
 
 pub struct MyApp {
     token: String,
+    owner: Option<String>,
     repos: Vec<String>,
     new_repo: String,
     status: String,
@@ -13,6 +14,7 @@ impl Default for MyApp {
     fn default() -> Self {
         Self {
             token: String::new(),
+            owner: None,
             repos: Vec::new(),
             new_repo: String::new(),
             status: String::new(),
@@ -26,7 +28,11 @@ impl eframe::App for MyApp {
             ui.heading("GitHub Репозиторий Менеджер");
 
             ui.horizontal(|ui| {
-                ui.add(TextEdit::singleline(&mut self.token).password(true).desired_width(250.0));
+                ui.add(
+                    TextEdit::singleline(&mut self.token)
+                        .password(true)
+                        .desired_width(250.0),
+                );
                 if ui.button("Вставить из буфера").clicked() {
                     let mut clipboard = ClipboardContext::new().unwrap();
                     if let Ok(contents) = clipboard.get_contents() {
@@ -42,12 +48,27 @@ impl eframe::App for MyApp {
                 if self.token.trim().is_empty() {
                     self.status = "Введите токен!".to_string();
                 } else {
-                    match GitHubClient::new(self.token.clone()).list_repos() {
-                        Ok(list) => {
-                            self.repos = list;
-                            self.status = "Репозитории загружены".to_string();
+                    let client = GitHubClient::new(self.token.clone());
+                    match client.get_owner() {
+                        Ok(owner_login) => {
+                            self.owner = Some(owner_login.clone());
+                            match client.list_repos() {
+                                Ok(list) => {
+                                    self.repos = list;
+                                    self.status = format!(
+                                        "Репозитории загружены. Пользователь: {}",
+                                        owner_login
+                                    );
+                                }
+                                Err(e) => {
+                                    self.status = format!("Ошибка загрузки репозиториев: {}", e)
+                                }
+                            }
                         }
-                        Err(e) => self.status = format!("Ошибка загрузки: {}", e),
+                        Err(e) => {
+                            self.status = format!("Ошибка получения пользователя: {}", e);
+                            self.owner = None;
+                        }
                     }
                 }
             }
@@ -69,16 +90,20 @@ impl eframe::App for MyApp {
             }
 
             // Удаляем репозитории вне цикла (после borrow-immutable)
-            for repo_name in repos_to_delete {
-                // Заменить "OWNER" на твой GitHub логин!
-                match GitHubClient::new(self.token.clone()).delete_repo("OWNER", &repo_name) {
-                    Ok(_) => {
-                        self.status = format!("Репозиторий '{}' удалён", repo_name);
-                        self.repos.retain(|r| r != &repo_name);
-                    }
-                    Err(e) => self.status = format!("Ошибка удаления: {}", e),
-                }
+for repo_name in repos_to_delete {
+    if let Some(owner) = &self.owner {
+        match GitHubClient::new(self.token.clone()).delete_repo(owner, &repo_name) {
+            Ok(_) => {
+                self.status = format!("Репозиторий '{}' удалён", repo_name);
+                self.repos.retain(|r| r != &repo_name);
             }
+            Err(e) => self.status = format!("Ошибка удаления: {}", e),
+        }
+    } else {
+        self.status = "Неизвестный владелец репозитория. Пожалуйста, загрузите репозитории заново.".to_string();
+    }
+}
+
 
             ui.separator();
 
