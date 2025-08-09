@@ -1,6 +1,6 @@
-use crate::models::Repo;
+use anyhow::{Result};
 use reqwest::blocking::Client;
-use serde_json::json;
+use serde::{Serialize, Deserialize};
 
 pub struct GitHubClient {
     token: String,
@@ -15,59 +15,55 @@ impl GitHubClient {
         }
     }
 
-    pub fn list_repos(&self) -> Result<Vec<Repo>, String> {
-        let res = self
+    pub fn list_repos(&self) -> Result<Vec<String>> {
+        let url = "https://api.github.com/user/repos";
+        let repos: Vec<Repo> = self
             .client
-            .get("https://api.github.com/user/repos")
-            .header("User-Agent", "rust-gui")
+            .get(url)
+            .header("User-Agent", "rust-github-client")
             .bearer_auth(&self.token)
-            .send()
-            .map_err(|e| e.to_string())?;
+            .send()?
+            .error_for_status()?
+            .json()?;
 
-        if res.status().is_success() {
-            res.json::<Vec<Repo>>().map_err(|e| e.to_string())
-        } else {
-            Err(format!("Ошибка: {}", res.status()))
-        }
+        Ok(repos.into_iter().map(|r| r.name).collect())
     }
 
-    pub fn create_repo(&self, name: &str) -> Result<(), String> {
-        let body = json!({
-            "name": name,
-            "private": false
-        });
-
-        let res = self
-            .client
-            .post("https://api.github.com/user/repos")
-            .header("User-Agent", "rust-gui")
-            .bearer_auth(&self.token)
-            .json(&body)
-            .send()
-            .map_err(|e| e.to_string())?;
-
-        if res.status().is_success() {
-            Ok(())
-        } else {
-            Err(format!("Ошибка: {}", res.status()))
-        }
-    }
-
-    pub fn delete_repo(&self, owner: &str, repo: &str) -> Result<(), String> {
-        let url = format!("https://api.github.com/repos/{}/{}", owner, repo);
-
-        let res = self
-            .client
+    pub fn delete_repo(&self, owner: &str, repo_name: &str) -> Result<()> {
+        let url = format!("https://api.github.com/repos/{}/{}", owner, repo_name);
+        self.client
             .delete(&url)
-            .header("User-Agent", "rust-gui")
+            .header("User-Agent", "rust-github-client")
             .bearer_auth(&self.token)
-            .send()
-            .map_err(|e| e.to_string())?;
+            .send()?
+            .error_for_status()?;
 
-        if res.status().is_success() {
-            Ok(())
-        } else {
-            Err(format!("Ошибка: {}", res.status()))
-        }
+        Ok(())
     }
+
+    pub fn create_repo(&self, name: &str) -> Result<()> {
+        #[derive(Serialize)]
+        struct NewRepo<'a> {
+            name: &'a str,
+        }
+
+        let new_repo = NewRepo { name };
+
+        let url = "https://api.github.com/user/repos";
+
+        self.client
+            .post(url)
+            .header("User-Agent", "rust-github-client")
+            .bearer_auth(&self.token)
+            .json(&new_repo)
+            .send()?
+            .error_for_status()?;
+
+        Ok(())
+    }
+}
+
+#[derive(Deserialize)]
+struct Repo {
+    name: String,
 }
